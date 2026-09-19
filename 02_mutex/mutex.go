@@ -2,6 +2,7 @@ package mutex
 
 import (
 	"homework1/internal/futex"
+	"runtime"
 	"sync/atomic"
 )
 
@@ -25,9 +26,13 @@ func (m *Mutex) Lock() {
 			if atomic.CompareAndSwapUint32(&m.state, free, held) {
 				return
 			}
+
+			runtime.Gosched()
 		}
 
-		if atomic.CompareAndSwapUint32(&m.state, held, contended) {
+		atomic.CompareAndSwapUint32(&m.state, held, contended)
+
+		if atomic.LoadUint32(&m.state) == contended {
 			futex.Wait(&m.state, contended)
 		}
 	}
@@ -48,9 +53,13 @@ func (m *Mutex) Unlock() {
 	case free:
 		panic("already unlocked")
 	case held:
-		atomic.StoreUint32(&m.state, free)
+		if atomic.CompareAndSwapUint32(&m.state, held, free) {
+			return
+		}
 	case contended:
-		atomic.StoreUint32(&m.state, free)
-		futex.Wake(&m.state)
+		if atomic.CompareAndSwapUint32(&m.state, contended, free) {
+			futex.WakeAll(&m.state)
+			return
+		}
 	}
 }
