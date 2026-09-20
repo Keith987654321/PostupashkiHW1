@@ -1,32 +1,66 @@
 package semaphore
 
+import (
+	"homework1/internal/futex"
+	"sync/atomic"
+)
+
 type Semaphore struct {
-	ch chan struct{}
+	permits uint32
 }
 
 func New(n int) *Semaphore {
+	if n < 0 {
+		panic("semaphore: negative permits")
+	}
+
 	return &Semaphore{
-		ch: make(chan struct{}, n),
+		permits: uint32(n),
 	}
 }
 
 func (s *Semaphore) Acquire() {
-	s.ch <- struct{}{}
+	for {
+		current := atomic.LoadUint32(&s.permits)
+
+		if current == 0 {
+			futex.Wait(&s.permits, 0)
+			continue
+		}
+
+		if atomic.CompareAndSwapUint32(
+			&s.permits,
+			current,
+			current-1,
+		) {
+			return
+		}
+	}
 }
 
 func (s *Semaphore) TryAcquire() bool {
-	select {
-	case s.ch <- struct{}{}:
-		return true
-	default:
-		return false
+	for {
+		current := atomic.LoadUint32(&s.permits)
+
+		if current == 0 {
+			return false
+		}
+
+		if atomic.CompareAndSwapUint32(
+			&s.permits,
+			current,
+			current-1,
+		) {
+			return true
+		}
 	}
 }
 
 func (s *Semaphore) Release() {
-	<-s.ch
+	atomic.AddUint32(&s.permits, 1)
+	futex.Wake(&s.permits)
 }
 
 func (s *Semaphore) Available() int {
-	return cap(s.ch) - len(s.ch)
+	return int(atomic.LoadUint32(&s.permits))
 }
