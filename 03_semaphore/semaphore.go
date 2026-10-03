@@ -11,7 +11,7 @@ type Semaphore struct {
 
 func New(n int) *Semaphore {
 	if n < 0 {
-		panic("semaphore: negative permits")
+		panic("negative permits")
 	}
 
 	return &Semaphore{
